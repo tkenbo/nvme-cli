@@ -3612,7 +3612,7 @@ static int sec_send(int argc, char **argv, struct command *cmd, struct plugin *p
 	const char *tl = "transfer length (cf. SPC-4)";
 	const char *namespace_id = "desired namespace";
 	const char *nssf = "NVMe Security Specific Field";
-	int err, fd, sec_fd = -1;
+	int err, fd, sec_fd = STDIN_FILENO;
 	void *sec_buf;
 	unsigned int sec_size;
 
@@ -3626,7 +3626,7 @@ static int sec_send(int argc, char **argv, struct command *cmd, struct plugin *p
 	};
 
 	struct config cfg = {
-		.file = "",
+		.file = NULL,
 		.secp = 0,
 		.spsp = 0,
 		.tl   = 0,

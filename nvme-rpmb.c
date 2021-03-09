@@ -28,7 +28,6 @@
 
 #include "nvme.h"
 #include "nvme-print.h"
-#include "nvme-ioctl.h"
 
 #define CREATE_CMD
 
