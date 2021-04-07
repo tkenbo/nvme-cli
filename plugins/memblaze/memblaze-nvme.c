@@ -5,15 +5,9 @@
 #include <unistd.h>
 #include <time.h>
 
-#include "linux/nvme_ioctl.h"
-
 #include "nvme.h"
 #include "nvme-print.h"
-#include "nvme-ioctl.h"
 #include "plugin.h"
-
-#include "argconfig.h"
-#include "suffix.h"
 
 #define CREATE_CMD
 #include "memblaze-nvme.h"
@@ -465,8 +459,8 @@ static int mb_get_additional_smart_log(int argc, char **argv, struct command *cm
 	if (fd < 0)
 		return fd;
 
-	err = nvme_get_log(fd, cfg.namespace_id, 0xca, false,
-			   NVME_NO_LOG_LSP, sizeof(smart_log), &smart_log);
+	err = nvme_get_nsid_log(fd, 0xca, cfg.namespace_id,
+		sizeof(smart_log), &smart_log);
 	if (!err) {
 		if (!cfg.raw_binary)
 			err = show_memblaze_smart_log(fd, cfg.namespace_id, devicename, &smart_log);
@@ -503,7 +497,7 @@ static int mb_get_powermanager_status(int argc, char **argv, struct command *cmd
     fd = parse_and_open(argc, argv, desc, opts);
     if (fd < 0) return fd;
 
-    err = nvme_get_feature(fd, 0, feature_id, 0, 0, 0, NULL, &result);
+    err = nvme_get_features_simple(fd, feature_id, 0, &result);
     if (err < 0) {
         perror("get-feature");
     }
@@ -525,13 +519,11 @@ static int mb_set_powermanager_status(int argc, char **argv, struct command *cmd
     __u32 result;
 
     struct config {
-        __u32 feature_id;
         __u32 value;
         int   save;
     };
 
     struct config cfg = {
-        .feature_id   = MB_FEAT_POWER_MGMT,
         .value        = 0,
         .save         = 0,
     };
@@ -545,13 +537,13 @@ static int mb_set_powermanager_status(int argc, char **argv, struct command *cmd
     fd = parse_and_open(argc, argv, desc, opts);
     if (fd < 0) return fd;
 
-    err = nvme_set_feature(fd, 0, cfg.feature_id, cfg.value, 0, cfg.save, 0, NULL, &result);
+    err = nvme_set_features_simple(fd, MB_FEAT_POWER_MGMT, 0, cfg.value, cfg.save, &result);
     if (err < 0) {
         perror("set-feature");
     }
     if (!err) {
-        printf("set-feature:%02x (%s), value:%#08x\n", cfg.feature_id,
-            mb_feature_to_string(cfg.feature_id), cfg.value);
+        printf("set-feature:%02x (%s), value:%#08x\n", MB_FEAT_POWER_MGMT,
+            mb_feature_to_string(MB_FEAT_POWER_MGMT), cfg.value);
     } else if (err > 0)
         fprintf(stderr, "NVMe Status:%s(%x)\n", nvme_status_to_string(err), err);
 
@@ -573,13 +565,11 @@ static int mb_set_high_latency_log(int argc, char **argv, struct command *cmd, s
     int param1 = 0, param2 = 0;
 
     struct config {
-        __u32 feature_id;
         char * param;
         __u32 value;
     };
 
     struct config cfg = {
-        .feature_id   = MB_FEAT_HIGH_LATENCY,
         .param        = "0,0",
         .value        = 0,
     };
@@ -602,13 +592,14 @@ static int mb_set_high_latency_log(int argc, char **argv, struct command *cmd, s
     }
     cfg.value = (param1 << MB_FEAT_HIGH_LATENCY_VALUE_SHIFT) | param2;
 
-    err = nvme_set_feature(fd, 0, cfg.feature_id, cfg.value, 0, 0, 0, NULL, &result);
+    err = nvme_set_features_simple(fd, MB_FEAT_HIGH_LATENCY, 0, cfg.value,
+				   0, &result);
     if (err < 0) {
         perror("set-feature");
     }
     if (!err) {
-        printf("set-feature:0x%02X (%s), value:%#08x\n", cfg.feature_id,
-            mb_feature_to_string(cfg.feature_id), cfg.value);
+        printf("set-feature:0x%02X (%s), value:%#08x\n", MB_FEAT_HIGH_LATENCY,
+            mb_feature_to_string(MB_FEAT_HIGH_LATENCY), cfg.value);
     } else if (err > 0)
         fprintf(stderr, "NVMe Status:%s(%x)\n", nvme_status_to_string(err), err);
 
@@ -721,11 +712,11 @@ static int mb_high_latency_log_print(int argc, char **argv, struct command *cmd,
     if (fd < 0) return fd;
 
     glp_high_latency_show_bar(fdi, DO_PRINT_FLAG);
-    err = nvme_get_log(fd, NVME_NSID_ALL, GLP_ID_VU_GET_HIGH_LATENCY_LOG, 0, NVME_NO_LOG_LSP, sizeof(buf), &buf);
+    err = nvme_get_log_simple(fd, GLP_ID_VU_GET_HIGH_LATENCY_LOG, sizeof(buf), &buf);
 
-    while ( 1) {
+    while (1) {
         if (!glp_high_latency(fdi, buf, LOG_PAGE_SIZE, DO_PRINT_FLAG)) break;
-        err = nvme_get_log(fd, NVME_NSID_ALL, GLP_ID_VU_GET_HIGH_LATENCY_LOG, 0, NVME_NO_LOG_LSP, sizeof(buf), &buf);
+        err = nvme_get_log_simple(fd, GLP_ID_VU_GET_HIGH_LATENCY_LOG, sizeof(buf), &buf);
         if ( err) {
             fprintf(stderr, "NVMe Status:%s(%x)\n", nvme_status_to_string(err), err);
             break;
@@ -739,13 +730,13 @@ static int mb_high_latency_log_print(int argc, char **argv, struct command *cmd,
 
 static int memblaze_fw_commit(int fd, int select)
 {
-	struct nvme_admin_cmd cmd = {
-		.opcode		= nvme_admin_activate_fw,
+	struct nvme_passthru_cmd cmd = {
+		.opcode		= nvme_admin_fw_commit,
 		.cdw10		= 8,
 		.cdw12      = select,
 	};
 
-	return nvme_submit_admin_passthru(fd, &cmd);
+	return nvme_submit_admin_passthru(fd, &cmd, NULL);
 }
 
 static int mb_selective_download(int argc, char **argv, struct command *cmd, struct plugin *plugin)
@@ -994,7 +985,7 @@ static int mb_lat_stats_log_print(int argc, char **argv, struct command *cmd, st
     fd = parse_and_open(argc, argv, desc, opts);
     if (fd < 0) return fd;
 
-    err = nvme_get_log(fd, NVME_NSID_ALL, cfg.write ? 0xc2 : 0xc1, false, NVME_NO_LOG_LSP, sizeof(stats), &stats);
+    err = nvme_get_log_simple(fd, cfg.write ? 0xc2 : 0xc1, sizeof(stats), &stats);
     if (!err)
         io_latency_histogram(cfg.write ? f2 : f1, stats, DO_PRINT_FLAG,
          cfg.write ? GLP_ID_VU_GET_WRITE_LATENCY_HISTOGRAM : GLP_ID_VU_GET_READ_LATENCY_HISTOGRAM);
@@ -1017,13 +1008,11 @@ static int memblaze_clear_error_log(int argc, char **argv, struct command *cmd, 
     __u32 result;
 
     struct config {
-        __u32 feature_id;
         __u32 value;
         int   save;
     };
 
     struct config cfg = {
-        .feature_id   = 0xf7,
         .value        = 0x534d0001,
         .save         = 0,
     };
@@ -1036,18 +1025,17 @@ static int memblaze_clear_error_log(int argc, char **argv, struct command *cmd, 
 	if (fd < 0)
 		return fd;
 
-
-
-    err = nvme_set_feature(fd, 0, cfg.feature_id, cfg.value, 0, cfg.save, 0, NULL, &result);
+    err = nvme_set_features_simple(fd, 0xf7, 0, cfg.value, cfg.save, &result);
     if (err < 0) {
         perror("set-feature");
     }
     if (!err) {
-        printf("set-feature:%02x (%s), value:%#08x\n", cfg.feature_id, mb_feature_to_string(cfg.feature_id), cfg.value);
+        printf("set-feature:%02x (%s), value:%#08x\n", 0xf7,
+		mb_feature_to_string(0xf7), cfg.value);
     } else if (err > 0)
         fprintf(stderr, "NVMe Status:%s(%x)\n", nvme_status_to_string(err), err);
 /*
-	struct nvme_admin_cmd admin_cmd = {
+	struct nvme_passthru_cmd admin_cmd = {
 		.opcode		= OP,
 		.cdw10		= FID,
 	};
@@ -1072,13 +1060,7 @@ static int mb_set_lat_stats(int argc, char **argv,
 			"No argument prints current status.");
 	const char *enable_desc = "Enable LST";
 	const char *disable_desc = "Disable LST";
-	const __u32 nsid = 0;
-	const __u8 fid = 0xe2;
-	const __u8 sel = 0;
-	const __u32 cdw11 = 0x0;
-	const __u32 cdw12 = 0x0;
 	const __u32 data_len = 32;
-	const __u32 save = 0;
 	__u32 result;
 	void *buf = NULL;
 
@@ -1115,12 +1097,11 @@ static int mb_set_lat_stats(int argc, char **argv,
 		return fd;
 	switch (option) {
 	case None:
-		err = nvme_get_feature(fd, nsid, fid, sel, cdw11, data_len, buf,
-					&result);
+		err = nvme_get_features_data(fd, 0xe2, 0, data_len, buf, &result);
 		if (!err) {
 			printf(
 				"Latency Statistics Tracking (FID 0x%X) is currently (%i).\n",
-				fid, result);
+				0xe2, result);
 		} else {
 			printf("Could not read feature id 0xE2.\n");
 			return err;
@@ -1128,8 +1109,7 @@ static int mb_set_lat_stats(int argc, char **argv,
 		break;
 	case True:
 	case False:
-		err = nvme_set_feature(fd, nsid, fid, option, cdw12, save,
-				data_len, buf, &result);
+		err = nvme_set_features_data(fd, 0xe2, 0, option, 0, data_len, buf, &result);
 		if (err > 0) {
 			fprintf(stderr, "NVMe Status:%s(%x)\n",
 					nvme_status_to_string(err), err);
@@ -1138,7 +1118,7 @@ static int mb_set_lat_stats(int argc, char **argv,
 			fprintf(stderr, "Command failed while parsing.\n");
 		} else {
 			printf("Successfully set enable bit for FID (0x%X) to %i.\n",
-				fid, option);
+				0xe2, option);
 		}
 		break;
 	default:

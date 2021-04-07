@@ -5,17 +5,10 @@
 #include <unistd.h>
 #include <inttypes.h>
 
-#include "linux/nvme_ioctl.h"
-
 #include "common.h"
 #include "nvme.h"
 #include "nvme-print.h"
-#include "nvme-ioctl.h"
-#include "json.h"
 #include "plugin.h"
-
-#include "argconfig.h"
-#include "suffix.h"
 
 #define CREATE_CMD
 #include "amzn-nvme.h"

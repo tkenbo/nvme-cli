@@ -20,11 +20,13 @@
 #include <stdint.h>
 #include <endian.h>
 #include <sys/time.h>
+#include <uuid/uuid.h>
 #include <libnvme.h>
 
 #include "plugin.h"
 #include "util/json.h"
 #include "util/argconfig.h"
+#include "util/suffix.h"
 
 
 enum nvme_print_flags {
@@ -47,8 +49,6 @@ extern const char *output_format;
 enum nvme_print_flags validate_output_format(char *format);
 int __id_ctrl(int argc, char **argv, struct command *cmd,
 	struct plugin *plugin, void (*vs)(__u8 *vs, struct json_object *root));
-char *nvme_char_from_block(char *block);
-void *mmap_registers(const char *dev);
 
 extern int current_index;
 
